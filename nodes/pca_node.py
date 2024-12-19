@@ -105,6 +105,7 @@ def nodeInitializer():
     numericAttr.writable = True
     numericAttr.storable = True
     numericAttr.keyable = True
+    PCANode.addAttribute(PCANode.featuresAttr)
 
     # Components (double array)
     PCANode.componentsAttr = typedAttr.create("components", "comp", om.MFnData.kDoubleArray)
@@ -112,6 +113,7 @@ def nodeInitializer():
     typedAttr.writable = True
     typedAttr.storable = True
     typedAttr.keyable = True
+    PCANode.addAttribute(PCANode.componentsAttr)
 
     # Mean (double array)
     PCANode.meanAttr = typedAttr.create("mean", "mean", om.MFnData.kDoubleArray)
@@ -119,6 +121,7 @@ def nodeInitializer():
     typedAttr.writable = True
     typedAttr.storable = True
     typedAttr.keyable = True
+    PCANode.addAttribute(PCANode.meanAttr)
 
     # n_components (integer)
     PCANode.nComponentsAttr = numericAttr.create("nComponents", "nc", om.MFnNumericData.kInt, 0)
@@ -126,6 +129,7 @@ def nodeInitializer():
     numericAttr.writable = True
     numericAttr.storable = True
     numericAttr.keyable = True
+    PCANode.addAttribute(PCANode.nComponentsAttr)
 
     # Normalize input attributes
     PCANode.normalizeInputAttr = numericAttr.create("normalizeInput", "normIn", om.MFnNumericData.kBoolean, False)
@@ -133,9 +137,21 @@ def nodeInitializer():
     numericAttr.writable = True
     numericAttr.storable = True
     numericAttr.keyable = True
+    PCANode.addAttribute(PCANode.normalizeInputAttr)
 
     PCANode.inputMeanAttr = typedAttr.create("inputMean", "inMean", om.MFnData.kDoubleArray)
+    numericAttr.readable = True
+    numericAttr.writable = True
+    numericAttr.storable = True
+    numericAttr.keyable = False
+    PCANode.addAttribute(PCANode.inputMeanAttr)
+
     PCANode.inputStdAttr = typedAttr.create("inputStd", "inStd", om.MFnData.kDoubleArray)
+    numericAttr.readable = True
+    numericAttr.writable = True
+    numericAttr.storable = True
+    numericAttr.keyable = False
+    PCANode.addAttribute(PCANode.inputStdAttr)
 
     # Denormalize output attributes
     PCANode.denormalizeOutputAttr = numericAttr.create("denormalizeOutput", "denormOut", om.MFnNumericData.kBoolean, False)
@@ -143,9 +159,21 @@ def nodeInitializer():
     numericAttr.writable = True
     numericAttr.storable = True
     numericAttr.keyable = True
+    PCANode.addAttribute(PCANode.denormalizeOutputAttr)
 
     PCANode.outputMeanAttr = typedAttr.create("outputMean", "outMean", om.MFnData.kDoubleArray)
+    numericAttr.readable = True
+    numericAttr.writable = True
+    numericAttr.storable = True
+    numericAttr.keyable = False
+    PCANode.addAttribute(PCANode.outputMeanAttr)
+
     PCANode.outputStdAttr = typedAttr.create("outputStd", "outStd", om.MFnData.kDoubleArray)
+    numericAttr.readable = True
+    numericAttr.writable = True
+    numericAttr.storable = True
+    numericAttr.keyable = False
+    PCANode.addAttribute(PCANode.outputStdAttr)
 
     # Projection (array of floats, output)
     PCANode.projectionAttr = numericAttr.create("projection", "proj", om.MFnNumericData.kFloat)
@@ -154,26 +182,29 @@ def nodeInitializer():
     numericAttr.readable = True
     numericAttr.writable = False
     numericAttr.storable = False
+    PCANode.addAttribute(PCANode.projectionAttr)
 
-    # Add attributes to the node
-    for attr in [
-        PCANode.featuresAttr, PCANode.componentsAttr, PCANode.meanAttr, PCANode.nComponentsAttr,
-        PCANode.normalizeInputAttr, PCANode.inputMeanAttr, PCANode.inputStdAttr,
-        PCANode.denormalizeOutputAttr, PCANode.outputMeanAttr, PCANode.outputStdAttr,
-        PCANode.projectionAttr
-    ]:
-        PCANode.addAttribute(attr)
 
     # Set attribute dependencies
-    for inputAttr in [
-        PCANode.featuresAttr, PCANode.componentsAttr, PCANode.meanAttr, PCANode.nComponentsAttr,
-        PCANode.normalizeInputAttr, PCANode.inputMeanAttr, PCANode.inputStdAttr,
-        PCANode.denormalizeOutputAttr, PCANode.outputMeanAttr, PCANode.outputStdAttr
-    ]:
-        PCANode.attributeAffects(inputAttr, PCANode.projectionAttr)
+    PCANode.attributeAffects(PCANode.featuresAttr, PCANode.projectionAttr)
+    PCANode.attributeAffects(PCANode.componentsAttr, PCANode.projectionAttr)
+    PCANode.attributeAffects(PCANode.meanAttr, PCANode.projectionAttr)
+    PCANode.attributeAffects(PCANode.nComponentsAttr, PCANode.projectionAttr)
+    PCANode.attributeAffects(PCANode.normalizeInputAttr, PCANode.projectionAttr)
+    PCANode.attributeAffects(PCANode.inputMeanAttr, PCANode.projectionAttr)
+    PCANode.attributeAffects(PCANode.inputStdAttr, PCANode.projectionAttr)
+    PCANode.attributeAffects(PCANode.denormalizeOutputAttr, PCANode.projectionAttr)
+    PCANode.attributeAffects(PCANode.outputMeanAttr, PCANode.projectionAttr)
+    PCANode.attributeAffects(PCANode.outputStdAttr, PCANode.projectionAttr)
 
 # Plugin Registration
 def initializePlugin(mobject):
+    """
+    Initialize the plugin when Maya loads it.
+    
+    Args:
+        mobject: The MObject representing the plugin.
+    """
     plugin = om.MFnPlugin(mobject)
     try:
         plugin.registerNode(
@@ -182,8 +213,9 @@ def initializePlugin(mobject):
             nodeCreator,
             nodeInitializer
         )
-    except:
-        om.MGlobal.displayError("Failed to register node: " + PCANode.kNodeName)
+        om.MGlobal.displayInfo(f"Registered node: {PCANode.kNodeName}")
+    except Exception as e:
+        om.MGlobal.displayError(f"Failed to register node: {PCANode.kNodeName}. Error: {e}")
 
 def uninitializePlugin(mobject):
     plugin = om.MFnPlugin(mobject)
