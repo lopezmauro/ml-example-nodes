@@ -1,6 +1,14 @@
 import maya.api.OpenMaya as om
 import numpy as np
 
+def maya_useNewAPI():
+     """
+     The presence of this function tells Maya that the plugin produces, and
+     expects to be passed, objects created using the Maya Python API 2.0.
+     """
+     pass
+
+
 class RegressionNode(om.MPxNode):
     """
     RegressionNode is a custom Maya node that performs linear regression inference.
@@ -63,24 +71,59 @@ class RegressionNode(om.MPxNode):
         features = np.array(features)
 
         # Retrieve weights and bias
-        weights = np.array(dataBlock.inputValue(self.weightsAttr).asDoubleArray())
-        bias = dataBlock.inputValue(self.biasAttr).asDouble()
+        weightsHandle = dataBlock.inputArrayValue(self.weightsAttr)
+        weights = []
+        while not weightsHandle.isDone():
+            weights_handle = weightsHandle.inputValue()
+            weights_data = weights_handle.data()
+            weights_fn = om.MFnDoubleArrayData(weights_data)
+            weights.append(weights_fn.array())
+            weightsHandle.next()
+        weights = np.array(weights)
+
+        bias_handle = dataBlock.inputValue(self.biasAttr)
+        bias_data = bias_handle.data()
+        bias_fn = om.MFnDoubleArrayData(bias_data)
+        bias = np.array(bias_fn.array())
 
         # Retrieve normalization settings
         normalizeInput = dataBlock.inputValue(self.normalizeInputAttr).asBool()
-        inputMean = np.array(dataBlock.inputValue(self.inputMeanAttr).asDoubleArray())
-        inputStd = np.array(dataBlock.inputValue(self.inputStdAttr).asDoubleArray())
+        inputMean = np.zeros_like(features)
+        inputStd = np.ones_like(features)
+        if normalizeInput:
+            inputsMean_handle = dataBlock.inputValue(self.inputMeanAttr)
+            inputsMean_data = inputsMean_handle.data()
+            inputsMean_fn = om.MFnDoubleArrayData(inputsMean_data)
+            if len(inputsMean_fn):
+                inputMean = np.asarray(inputsMean_fn.array())
+            inputStd_handle = dataBlock.inputValue(self.inputStdAttr)
+            inputStd_data = inputStd_handle.data()
+            inputStd_fn = om.MFnDoubleArrayData(inputStd_data)
+            if len(inputStd_fn):
+                inputStd = np.asarray(inputStd_fn.array())
 
         denormalizeOutput = dataBlock.inputValue(self.denormalizeOutputAttr).asBool()
-        outputMean = np.array(dataBlock.inputValue(self.outputMeanAttr).asDoubleArray())
-        outputStd = np.array(dataBlock.inputValue(self.outputStdAttr).asDoubleArray())
-
+        outputMean = np.zeros_like(features)
+        outputStd = np.ones_like(features)
+        if denormalizeOutput:
+            outputMean_handle = dataBlock.inputValue(self.outputMeanAttr)
+            outputMean_data = outputMean_handle.data()
+            outputMean_fn = om.MFnDoubleArrayData(outputMean_data)
+            if len(outputMean_fn):
+                outputMean = np.asarray(outputMean_fn.array())
+            outputStd_handle = dataBlock.inputValue(self.outputStdAttr)
+            outputStd_data = outputStd_handle.data()
+            outputStd_fn = om.MFnDoubleArrayData(outputStd_data)
+            if len(outputStd_fn):
+                outputStd = np.asarray(outputStd_fn.array())
         # Validation
         # Ensure the number of features matches the number of weights
-        if len(features) != len(weights):
-            om.MGlobal.displayError("Mismatch: The number of features must match the number of weights.")
+        if len(features) != weights.shape[1]:
+            om.MGlobal.displayError("Mismatch: The number of features must match the number of weights rows.")
             return
-
+        if len(bias) != weights.shape[0]:
+            om.MGlobal.displayError("Mismatch: The number of bias must match the number of weights columns.")
+            return
         # Ensure input mean and std match the number of features if normalization is enabled
         if normalizeInput and (len(inputMean) != len(features) or len(inputStd) != len(features)):
             om.MGlobal.displayError("Mismatch: Input mean and std must match the number of features.")
@@ -98,19 +141,21 @@ class RegressionNode(om.MPxNode):
 
         # Linear regression inference
         # Compute the prediction using the linear regression formula
-        prediction = np.dot(features, weights) + bias
+        prediction = np.dot(features, weights.T) + bias
 
         # Denormalize output
         # If denormalization is enabled, adjust the prediction using the output mean and std
         if denormalizeOutput:
-            prediction = prediction * outputStd[0] + outputMean[0]
+            prediction = prediction * outputStd + outputMean
 
         # Set output prediction
         # Set the computed prediction to the output attribute
         predictionHandle = dataBlock.outputArrayValue(self.predictionAttr)
         builder = predictionHandle.builder()
-        outputHandle = builder.addElement(0)
-        outputHandle.setFloat(prediction)
+        for i, pred in enumerate(prediction):
+            outputHandle = builder.addElement(i)
+            outputHandle.setFloat(pred)
+
         predictionHandle.set(builder)
         dataBlock.setClean(plug)
 
@@ -135,19 +180,21 @@ def nodeInitializer():
 
     # Weights (double array)
     RegressionNode.weightsAttr = typedAttr.create("weights", "wght", om.MFnData.kDoubleArray)
+    typedAttr.array = True
+    typedAttr.usesArrayDataBuilder = True
     typedAttr.readable = True
     typedAttr.writable = True
     typedAttr.storable = True
-    typedAttr.keyable = True
+    typedAttr.keyable = False
     RegressionNode.addAttribute(RegressionNode.weightsAttr)
 
 
     # Bias (double)
-    RegressionNode.biasAttr = numericAttr.create("bias", "bias", om.MFnNumericData.kDouble, 0.0)
-    numericAttr.readable = True
-    numericAttr.writable = True
-    numericAttr.storable = True
-    numericAttr.keyable = True
+    RegressionNode.biasAttr = typedAttr.create("bias", "bias", om.MFnNumericData.kDoubleArray)
+    typedAttr.readable = True
+    typedAttr.writable = True
+    typedAttr.storable = True
+    typedAttr.keyable = False
     RegressionNode.addAttribute(RegressionNode.biasAttr)
 
     # Normalize input attributes
