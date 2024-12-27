@@ -241,13 +241,15 @@ def normalize_features(inputs):
     normalized_inputs = (inputs - mean) / std
     return normalized_inputs, mean, std
 
-def get_blendshape_deltas(blendshape_node):
+def get_blendshape_data(blendshape_node):
     """
     Retrieve deltas from a blendshape node using the `inputPointsTarget` and `inputComponentsTarget` attributes.
 
     :param blendshape_node: The name of the blendshape node.
     :return: A dictionary containing deltas for each target.
     """
+    def getDigits(s):
+        return int(''.join([i for i in s if i.isdigit()]))
     # Dictionary to store deltas for each target
     deltas = {}
 
@@ -266,26 +268,44 @@ def get_blendshape_deltas(blendshape_node):
     for target_index in target_indices:
         # Access inputTargetGroup for the target
         input_target_group_attr = f"{input_target_attr}[{target_index}].inputTargetGroup"
-        group_indices = cmds.getAttr(input_target_group_attr, multiIndices=True)
-        if not group_indices:
+        weight_indices = cmds.getAttr(input_target_group_attr, multiIndices=True)
+        if not weight_indices:
             continue
 
-        for group_index in group_indices:
+        for weight_index in weight_indices:
             # Access inputPointsTarget
-            input_points_attr = f"{input_target_group_attr}[{group_index}].inputPointsTarget"
+            input_points_attr = f"{input_target_group_attr}[{weight_index}].inputPointsTarget"
             if cmds.getAttr(input_points_attr, size=True) > 0:
                 points = cmds.getAttr(input_points_attr)
             
             # Access inputComponentsTarget
-            input_components_attr = f"{input_target_group_attr}[{group_index}].inputComponentsTarget"
+            input_components_attr = f"{input_target_group_attr}[{weight_index}].inputComponentsTarget"
             if cmds.getAttr(input_components_attr, size=True) > 0:
                 components = cmds.getAttr(input_components_attr)
-            
+                indices = list()
+                for vtx in components:
+                    if ':' in vtx:
+                        start, end = [getDigits(a) for a in vtx.split(':')]
+                        indices.extend(range(start, end + 1))
+                    else:
+                        indices.append(getDigits(vtx)) 
             # Combine points and components into a delta dictionary
-            deltas[(target_index, group_index)] = {
+            deltas[weight_index] = {
                 "points": points,
-                "components": components,
+                "indices": indices,
             }
 
     return deltas
 
+def get_blenshape_points(mesh, blendshape_node):
+    """
+    Retrieve blendshape points for a given mesh and blendshape node.
+    """
+    fn = get_mesh_fn(mesh)
+    bshape_data = get_blendshape_data(blendshape_node)
+    shapes_deltas = list()
+    for _, delta_data in bshape_data.items():
+        deltas = np.zeros((fn.numVertices,3))
+        deltas[delta_data['indices']] = np.asarray(delta_data['points'])[:, :3]
+        shapes_deltas.append(deltas)
+    return np.asarray(shapes_deltas)
