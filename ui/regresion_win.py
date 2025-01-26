@@ -2,16 +2,12 @@ import imp
 import numpy as np
 from functools import partial, wraps
 from PySide2 import QtWidgets, QtCore, QtGui
-from shiboken2 import wrapInstance
-from maya import OpenMayaUI as omui
 from maya import cmds as cmds
 from . import maya_utils
 from sklearn.linear_model import ElasticNet
 imp.reload(maya_utils)
 
-def maya_main_window():
-    main_window_ptr = omui.MQtUtil.mainWindow()
-    return wrapInstance(int(main_window_ptr), QtWidgets.QWidget)
+
 
 def wait_cursor(func):
     @wraps(func)
@@ -31,7 +27,7 @@ class RegressionUI(QtWidgets.QDialog):
     update_progress = QtCore.Signal(int)
     update_status = QtCore.Signal(str)  # Define the signal
 
-    def __init__(self, parent=maya_main_window()):
+    def __init__(self, parent=maya_utils.maya_main_window()):
         super(RegressionUI, self).__init__(parent)
 
         self.setWindowTitle("Train Regression Model")

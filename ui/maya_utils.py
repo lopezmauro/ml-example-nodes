@@ -4,8 +4,15 @@ import numpy as np
 from maya import cmds
 from maya.api import OpenMaya as om
 from maya.api import OpenMayaAnim as oma
+from maya import OpenMayaUI as omui
+from shiboken2 import wrapInstance
+from PySide2 import QtWidgets
 
 _file_path = pathlib.Path(__file__)
+
+def maya_main_window():
+    main_window_ptr = omui.MQtUtil.mainWindow()
+    return wrapInstance(int(main_window_ptr), QtWidgets.QWidget)
 
 def load_node(node_name):
     """
@@ -15,8 +22,11 @@ def load_node(node_name):
     node_name (str): The name of the node to load.
 
     """
+    plugin_name = f"{node_name}.py"
+    if cmds.pluginInfo(plugin_name, query=True, loaded=True):
+        return
     file_dir = _file_path.parent.parent
-    file_found = list(file_dir.joinpath('nodes').glob(f"{node_name}.py"))
+    file_found = list(file_dir.joinpath('nodes').glob(plugin_name))
     if not file_found:
         raise ValueError(f"Node {node_name} not found.")
     plugin_path = str(file_found[0].resolve())

@@ -263,7 +263,9 @@ def nodeInitializer():
 
 # Plugin Registration
 def initializePlugin(mobject):
-    plugin = om.MFnPlugin(mobject)
+    vendor = "Mauro Lopez"
+    version = "1.0"
+    plugin = om.MFnPlugin(mobject, vendor, version)
     try:
         plugin.registerNode(
             RegressionNode.kNodeName,

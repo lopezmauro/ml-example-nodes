@@ -1,189 +1,204 @@
+import imp
 import maya.cmds as cmds
-import maya.OpenMayaUI as omui
-from PySide2 import QtWidgets, QtCore
-from shiboken2 import wrapInstance
+from PySide2 import QtWidgets
 import numpy as np
 from sklearn.decomposition import PCA
-
-# Helper to get Maya's main window
-def getMayaMainWindow():
-    mainWindowPtr = omui.MQtUtil.mainWindow()
-    return wrapInstance(int(mainWindowPtr), QtWidgets.QWidget)
+from ui import maya_utils
+imp.reload(maya_utils)
 
 class PCAUI(QtWidgets.QDialog):
-    def __init__(self, parent=getMayaMainWindow()):
-        """
-        Initialize the PCAUI dialog.
-        Args:
-            parent (QWidget): The parent widget.
-        """
+    def __init__(self, parent=maya_utils.maya_main_window()):
         super(PCAUI, self).__init__(parent)
-        self.setWindowTitle("PCA Node")
-        self.setMinimumSize(500, 400)
-        self.initUI()
+        self.setWindowTitle("PCA Blendshape UI")
+        self.setFixedSize(450, 200)
 
-    def initUI(self):
-        """
-        Initialize the UI components.
-        """
-        layout = QtWidgets.QVBoxLayout(self)
+        self.init_ui()
 
-        # Inputs Section
-        inputLayout = QtWidgets.QVBoxLayout()
-        self.inputAttributesList = QtWidgets.QListWidget()
-        self.inputAttributesList.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        inputLayout.addWidget(QtWidgets.QLabel("Select Input Attributes:"))
-        inputLayout.addWidget(self.inputAttributesList)
+    def init_ui(self):
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
 
-        buttonLayout = QtWidgets.QHBoxLayout()
-        self.addButton = QtWidgets.QPushButton("+")
-        self.addButton.clicked.connect(self.addSelectedAttribute)
-        self.removeButton = QtWidgets.QPushButton("-")
-        self.removeButton.clicked.connect(self.removeSelectedAttribute)
-        self.clearButton = QtWidgets.QPushButton("Clear")
-        self.clearButton.clicked.connect(self.clearAttributesList)
-        buttonLayout.addWidget(self.addButton)
-        buttonLayout.addWidget(self.removeButton)
-        buttonLayout.addWidget(self.clearButton)
-        inputLayout.addLayout(buttonLayout)
+        # Source Blendshape Layout
+        source_layout = QtWidgets.QHBoxLayout()
+        source_label = QtWidgets.QLabel("Source Blendshape:")
+        self.source_text_field = QtWidgets.QLineEdit()
+        self.source_button = QtWidgets.QPushButton("Get Blendshape Node")
+        self.source_button.clicked.connect(self.populate_source)
 
-        layout.addLayout(inputLayout)
+        source_layout.addWidget(source_label)
+        source_layout.addWidget(self.source_text_field)
+        source_layout.addWidget(self.source_button)
 
-        # Number of Components
-        self.nComponentsSpinBox = QtWidgets.QSpinBox()
-        self.nComponentsSpinBox.setMinimum(1)
-        self.nComponentsSpinBox.setMaximum(100)
-        layout.addWidget(QtWidgets.QLabel("Number of Components:"))
-        layout.addWidget(self.nComponentsSpinBox)
+        # Target Mesh Layout
+        target_layout = QtWidgets.QHBoxLayout()
+        target_label = QtWidgets.QLabel("Target Mesh:")
+        self.target_text_field = QtWidgets.QLineEdit()
+        self.target_button = QtWidgets.QPushButton("Get Target Mesh")
+        self.target_button.clicked.connect(self.populate_target)
 
-        # Normalize Options
-        self.normalizeInput = QtWidgets.QCheckBox("Normalize Inputs")
-        layout.addWidget(self.normalizeInput)
+        target_layout.addWidget(target_label)
+        target_layout.addWidget(self.target_text_field)
+        target_layout.addWidget(self.target_button)
 
-        # Execute Button
-        self.executeButton = QtWidgets.QPushButton("Create Nodes")
-        self.executeButton.clicked.connect(self.train_and_create_node)
-        layout.addWidget(self.executeButton)
+        # Create PCA Blendshape Button
+        self.create_button = QtWidgets.QPushButton("Create PCA Blendshape")
+        self.create_button.clicked.connect(self.do_it)
 
-    def addSelectedAttribute(self):
-        """
-        Add the currently selected attribute in Maya to the input attributes list.
-        """
-        selected_attrs = cmds.channelBox('mainChannelBox', q=True, selectedMainAttributes=True)
-        if selected_attrs:
-            for attr in selected_attrs:
-                self.inputAttributesList.addItem(attr)
+        # Add layouts to the main layout
+        main_layout.addLayout(source_layout)
+        main_layout.addLayout(target_layout)
+        main_layout.addWidget(self.create_button)
 
-    def removeSelectedAttribute(self):
-        """
-        Remove the currently selected attribute from the input attributes list.
-        """
-        for item in self.inputAttributesList.selectedItems():
-            self.inputAttributesList.takeItem(self.inputAttributesList.row(item))
-
-    def clearAttributesList(self):
-        """
-        Clear all attributes from the input attributes list.
-        """
-        self.inputAttributesList.clear()
-
-    def gatherFrameData(self, attributes):
-        """
-        Gather attribute values for all frames in the animation.
-        Args:
-            attributes (list): List of attribute names.
-        Returns:
-            np.array: Array of gathered attribute values.
-        """
-        start_frame = cmds.playbackOptions(q=True, min=True)
-        end_frame = cmds.playbackOptions(q=True, max=True)
-
-        data = []
-        for frame in range(int(start_frame), int(end_frame) + 1):
-            cmds.currentTime(frame)
-            frame_values = []
-            for attr in attributes:
-                frame_values.append(cmds.getAttr(attr))
-            data.append(frame_values)
-        return np.array(data)
-
-    def gatherAndNormalizeData(self, input_attrs):
-        """
-        Gather and normalize input data.
-        Args:
-            input_attrs (list): List of input attribute names.
-        Returns:
-            tuple: Normalized data, mean, and standard deviation.
-        """
-        # Gather data
-        X = self.gatherFrameData(input_attrs)
-
-        # Normalize inputs if selected
-        normalize = self.normalizeInput.isChecked()
-        if normalize:
-            X_mean, X_std = X.mean(axis=0), X.std(axis=0)
-            X = (X - X_mean) / X_std
-        else:
-            X_mean, X_std = np.zeros(X.shape[1]), np.ones(X.shape[1])
-
-        return X, X_mean, X_std
-
-    def trainPCA(self, X, n_components):
-        """
-        Train PCA model.
-        Args:
-            X (np.array): Input data.
-            n_components (int): Number of components.
-        Returns:
-            tuple: PCA components and mean.
-        """
-        # PCA (Principal Component Analysis) is a technique used to reduce the dimensionality of data.
-        # It transforms the data into a new coordinate system such that the greatest variance by any projection
-        # of the data comes to lie on the first coordinate (called the first principal component),
-        # the second greatest variance on the second coordinate, and so on.
-        pca = PCA(n_components=n_components)
-        pca.fit(X)
-        components = pca.components_  # Principal axes in feature space, representing the directions of maximum variance in the data.
-        mean = pca.mean_  # Per-feature empirical mean, estimated from the training set.
-        return components, mean
-
-    def train_and_create_node(self):
-        """
-        Train PCA model and create the PCA node in Maya.
-        """
-        # Get selected attributes
-        input_attrs = [item.text() for item in self.inputAttributesList.selectedItems()]
-        if not input_attrs:
-            QtWidgets.QMessageBox.warning(self, "Error", "Please select input attributes.")
+    def populate_source(self):
+        """Populate the source blendshape field."""
+        selected = cmds.ls(selection=True)
+        if not selected:
+            cmds.warning("No object selected.")
             return
 
-        # Get number of components
-        n_components = self.nComponentsSpinBox.value()
+        node = selected[0]
+        blendshape_node = None
+        if cmds.nodeType(node) == "blendShape":
+            blendshape_node = node
+        else:
+            bs_nodes = [a for a in cmds.listHistory(node, pdo=1) if cmds.nodeType(a) == "blendShape"]
+            if not bs_nodes:
+                cmds.warning(f"No blendshape node found for {node}.")
+                return
+            blendshape_node = bs_nodes[0]
+        self.source_text_field.setText(blendshape_node)
 
-        # Step 1: Data Gathering and Normalization
-        X, X_mean, X_std = self.gatherAndNormalizeData(input_attrs)
 
-        # Step 2: Train PCA
-        components, mean = self.trainPCA(X, n_components)
+    def populate_target(self):
+        """Populate the target mesh field."""
+        selected = cmds.ls(selection=True, type="transform")
+        if not selected:
+            cmds.warning("No object selected.")
+            return
 
-        # Step 3: Node Creation
-        node = cmds.createNode("pcaNode", name="pcaNode1")
-        cmds.setAttr(f"{node}.features", len(input_attrs), *[0] * len(input_attrs), type="floatArray")
-        cmds.setAttr(f"{node}.components", len(components.flatten()), *components.flatten(), type="doubleArray")
-        cmds.setAttr(f"{node}.mean", len(mean), *mean, type="doubleArray")
-        cmds.setAttr(f"{node}.nComponents", n_components)
-        if self.normalizeInput.isChecked():
-            cmds.setAttr(f"{node}.inputMean", len(X_mean), *X_mean, type="doubleArray")
-            cmds.setAttr(f"{node}.inputStd", len(X_std), *X_std, type="doubleArray")
+        shapes = cmds.listRelatives(selected[0], shapes=True, fullPath=True) or []
+        if shapes and cmds.nodeType(shapes[0]) == "mesh":
+            self.target_text_field.setText(selected[0])
+        else:
+            cmds.warning("The selected object is not a valid mesh.")
 
-        QtWidgets.QMessageBox.information(self, "Success", "PCA Node created and initialized.")
+    def get_blendshape_data(self, mesh, blendshape_node):
+        """
+        Retrieves blendshape data from the source mesh and blendshape node.
+
+        Args:
+            source_mesh (str): The name of the source mesh.
+            source_blendshape (str): The name of the source blendshape node.
+
+        Returns:
+            tuple: A tuple containing shapes deltas and aliases dictionary.
+        """
+        shapes_deltas = maya_utils.get_blenshape_points(mesh, blendshape_node)
+        aliases = cmds.aliasAttr(blendshape_node, q=1)
+        aliases_dict = dict(zip(aliases[1::2], aliases[::2]))
+        return shapes_deltas, aliases_dict
+
+    def get_pca_data(self, shapes_deltas):
+        """
+        This method takes a list of shape deltas, flattens the data, and applies Principal Component Analysis (PCA) 
+        to extract the principal components, the mean of the data, the weights of the data in the PCA space, 
+        and the cumulative variance ratio explained by the components.
+            
+        Args:
+            shapes_deltas (list): A list of shape deltas. Each element in the list represents the delta of a shape.
+
+        Returns:
+            tuple: A tuple containing the following elements:
+                - pca.mean_ (numpy.ndarray): The mean of the shape deltas.
+                - pca.components_ (numpy.ndarray): The principal components of the shape deltas.
+                - pcaWeights (numpy.ndarray): The weights of the shape deltas in the PCA space.
+                - cumulative_variance_ratio (numpy.ndarray): The cumulative variance ratio explained by the principal components.
+        """
+
+        ### get PCA data
+        # Flatten the data
+        delta_data_flat = shapes_deltas.reshape(shapes_deltas.shape[0], -1)
+        # Fit PCA
+        pca = PCA()
+        pca.fit(delta_data_flat)
+        # Transform data to get the PCA weights
+        pcaWeights = pca.transform(delta_data_flat)
+
+        # Get explained variance in order to compress the data in the node
+        explained_variance = pca.explained_variance_
+        total_variance = np.sum(explained_variance)
+        cumulative_variance_ratio = np.cumsum(explained_variance) / total_variance
+        return pca.mean_, pca.components_, pcaWeights, cumulative_variance_ratio
     
-# Run UI
-def show():
-    """
-    Show the PCAUI dialog.
-    """
-    ui = PCAUI()
-    ui.show()
+    def create_pca_blendshape(self, mesh, pca_mean, pca_components, pca_weights, cumulative_variance_ratio, aliases_dict):
+        """
+        Creates a PCA blendshape node on the target mesh using the provided PCA data.
 
-show()
+        Args:
+            target_mesh (str): The name of the target mesh.
+            pca_mean (np.array): The mean of the PCA.
+            pca_components (np.array): The components of the PCA.
+            pca_weights (np.array): The weights of the PCA.
+            cumulative_variance_ratio (np.array): The cumulative variance ratio of the PCA.
+            aliases_dict (dict): A dictionary of aliases.
+
+        Returns:
+            str: The name of the created PCA blendshape node.
+        """
+        node = cmds.deformer(mesh, type='pcaBlendshape')[0]
+        # set main PCA data
+        cmds.setAttr(f'{node}.pcaMean', pca_mean, type="doubleArray")
+        for i, each in enumerate(pca_components):
+            cmds.setAttr(f'{node}.pcaComponents[{i}]', each, type="doubleArray")    
+        # get the cached weight to recontruct the shapes
+        for i, each in enumerate(pca_weights):
+            cmds.setAttr(f'{node}.pcaWeights[{i}]', each, type="doubleArray")    
+        # set the explained variance in order to compress on the fly
+        cmds.setAttr(f'{node}.cumulativeVarianceRatio', cumulative_variance_ratio, type="doubleArray")
+
+        # create shape weights and rename them with the blendshape weights aliases
+        for i in range(pca_weights.shape[0]):
+            cmds.setAttr(f'{node}.shapeWeights[{i}]', 0)
+            cmds.aliasAttr(aliases_dict[f'weight[{i}]'], f'{node}.shapeWeights[{i}]')
+        return node
+    
+    def do_it(self):
+        """
+        This method performs a series of checks and operations to create a PCA blendshape node.
+        It verifies the target mesh, source mesh, and their vertex counts, then loads the PCA blendshape node,
+        retrieves blendshape data, performs PCA, and creates the PCA blendshape node.
+
+        Returns:
+            None
+        """
+        source_blendshape = self.source_text_field.text()
+        target_mesh = self.target_text_field.text()
+
+        if not source_blendshape:
+            cmds.warning("Source blendshape node is not specified.")
+            return
+        if not target_mesh:
+            cmds.warning("Target mesh is not specified.")
+            return
+
+        # Verify vertex count
+        source_mesh = cmds.listConnections(source_blendshape, type="mesh") or []
+        if not source_mesh:
+            cmds.warning("Cannot find source mesh for the blendshape node.")
+            return
+
+        source_vertex_count = cmds.polyEvaluate(source_mesh[0], vertex=True)
+        target_vertex_count = cmds.polyEvaluate(target_mesh, vertex=True)
+
+        if source_vertex_count != target_vertex_count:
+            cmds.warning("Source and target meshes do not have the same number of vertices.")
+            return
+        maya_utils.load_node('pca_blendshape')
+        shapes_deltas, aliases_dict = self.get_blendshape_data(source_mesh[0], source_blendshape)
+        pca_mean, pca_components, pca_weights, cumulative_variance_ratio = self.get_pca_data(shapes_deltas)
+        # Create the deformer node
+        node = self.create_pca_blendshape(target_mesh, pca_mean, pca_components, pca_weights, cumulative_variance_ratio, aliases_dict)
+        cmds.select(node)
+        QtWidgets.QMessageBox.information(self, "Success", f"PCA Node {node} created and initialized.")
+ 
+    
