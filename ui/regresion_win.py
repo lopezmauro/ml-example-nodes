@@ -40,7 +40,7 @@ class RegressionUI(QtWidgets.QDialog):
         self.layout.setMenuBar(self.menu_bar)
 
         # About menu
-        self.about_menu = self.menu_bar.addMenu("About")
+        self.about_menu = self.menu_bar.addMenu("Help")
         # Create an action for the 'Help' menu with a clickable link
         open_link_action = QtWidgets.QAction('Visit tool wiki page', self)
         self.about_menu.addAction(open_link_action)
