@@ -30,10 +30,24 @@ class RegressionUI(QtWidgets.QDialog):
     def __init__(self, parent=maya_utils.maya_main_window()):
         super(RegressionUI, self).__init__(parent)
 
+       
         self.setWindowTitle("Train Regression Model")
         self.setWindowFlags(self.windowFlags() ^ QtCore.Qt.WindowContextHelpButtonHint)
 
         self.layout = QtWidgets.QVBoxLayout(self)
+        # Menu bar
+        self.menu_bar = QtWidgets.QMenuBar(self)
+        self.layout.setMenuBar(self.menu_bar)
+
+        # About menu
+        self.about_menu = self.menu_bar.addMenu("About")
+        # Create an action for the 'Help' menu with a clickable link
+        open_link_action = QtWidgets.QAction('Visit tool wiki page', self)
+        self.about_menu.addAction(open_link_action)
+
+        # Connect the action to a function to open the URL
+        open_link_action.triggered.connect(self.open_link)
+
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
 
         # Input attributes layout
@@ -220,6 +234,10 @@ class RegressionUI(QtWidgets.QDialog):
         self.clear_button2.clicked.connect(partial(self.clear_list, self.outputs_attributes))
         self.remove_button2.clicked.connect(partial(self.remove_selected_item, self.outputs_attributes))
 
+    def open_link(self):
+        # Open the link in the default web browser
+        link = "https://github.com/lopezmauro/ml-example-nodes/wiki/Linear-Regression-Tool-for-Autodesk-Maya"
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl(link))
 
     def add_attributes(self, list_widget):
         slected_nodes = cmds.ls(sl=1)

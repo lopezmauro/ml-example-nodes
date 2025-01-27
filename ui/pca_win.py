@@ -1,6 +1,6 @@
 import imp
 import maya.cmds as cmds
-from PySide2 import QtWidgets
+from PySide2 import QtWidgets, QtGui, QtCore
 import numpy as np
 from sklearn.decomposition import PCA
 from ui import maya_utils
@@ -17,6 +17,18 @@ class PCAUI(QtWidgets.QDialog):
     def init_ui(self):
         # Main layout
         main_layout = QtWidgets.QVBoxLayout(self)
+
+        # Menu bar
+        self.menu_bar = QtWidgets.QMenuBar(self)
+        main_layout.setMenuBar(self.menu_bar)
+
+        # About menu
+        self.about_menu = self.menu_bar.addMenu("About")
+        # Create an action for the 'Help' menu with a clickable link
+        open_link_action = QtWidgets.QAction('Visit tool wiki page', self)
+        self.about_menu.addAction(open_link_action)
+        # Connect the action to a function to open the URL
+        open_link_action.triggered.connect(self.open_link)
 
         # Source Blendshape Layout
         source_layout = QtWidgets.QHBoxLayout()
@@ -48,6 +60,11 @@ class PCAUI(QtWidgets.QDialog):
         main_layout.addLayout(source_layout)
         main_layout.addLayout(target_layout)
         main_layout.addWidget(self.create_button)
+
+    def open_link(self):
+        # Open the link in the default web browser
+        link = "https://github.com/lopezmauro/ml-example-nodes/wiki/PCA-Blendshape-Node-for-Autodesk-Maya"
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl(link))
 
     def populate_source(self):
         """Populate the source blendshape field."""
