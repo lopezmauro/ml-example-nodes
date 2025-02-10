@@ -60,7 +60,7 @@ class RegressionNode(om.MPxNode):
             om.kUnknownParameter if the plug is not the prediction attribute.
         """
         if plug != RegressionNode.predictionAttr:
-            return om.kUnknownParameter
+            return
 
         # Retrieve input features
         featuresHandle = dataBlock.inputArrayValue(self.featuresAttr)

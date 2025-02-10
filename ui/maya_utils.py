@@ -1,4 +1,5 @@
 import pathlib
+import json
 import random
 import numpy as np
 from maya import cmds
@@ -31,7 +32,14 @@ def load_node(node_name):
         raise ValueError(f"Node {node_name} not found.")
     plugin_path = str(file_found[0].resolve())
     cmds.loadPlugin(plugin_path)
-    
+
+def get_long_attr_name(node, short_attr):
+    """Convert short attribute name to long name."""
+    try:
+        return cmds.attributeQuery(short_attr, node=node, longName=True)
+    except:
+        return short_attr  # If the query fails, return the short name
+
 def get_attribute_mplug(attribute_string):
     """
     Get the MPlug of an attribute in Maya.
@@ -247,7 +255,7 @@ def normalize_features(inputs):
 
     """
     mean = np.mean(inputs, axis=0)
-    std = np.std(inputs, axis=0)
+    std = np.std(inputs, axis=0) + np.finfo(float).eps
     normalized_inputs = (inputs - mean) / std
     return normalized_inputs, mean, std
 
@@ -319,3 +327,107 @@ def get_blenshape_points(mesh, blendshape_node):
         deltas[delta_data['indices']] = np.asarray(delta_data['points'])[:, :3]
         shapes_deltas.append(deltas)
     return np.asarray(shapes_deltas)
+
+def export_regression_node(regression_node, file_path):
+    """
+    Export the trained regression node's attributes and connections to a JSON file.
+    """
+    indices = cmds.getAttr(f"{regression_node}.weights", mi=1)
+    weights = list()
+    for i in indices:
+        weights.append(cmds.getAttr(f"{regression_node}.weights[{i}]"))
+    matrix_to_floats = set(cmds.listConnections(regression_node, s=1, d=0, type='matrixToFloats') or list())
+    matrix_to_floats_data = dict()
+    for node in matrix_to_floats:
+        src_connections = cmds.listConnections(node, s=1, d=0, p=1, c=1) or list()
+        matrix_to_floats_data[node] = list(zip(src_connections[1::2], src_connections[::2]))
+        
+    floats_to_transforms = set(cmds.listConnections(regression_node, s=0, d=1, type='floatsToTransform') or list())
+    floats_to_transforms_data = dict()
+    for node in floats_to_transforms:
+        dest_connections = cmds.listConnections(node, s=0, d=1, p=1, c=1) or list()
+        floats_to_transforms_data[node] = list(zip(dest_connections[::2], dest_connections[1::2]))
+    node_data = {"node_name": regression_node,
+                "weights": weights,
+                "bias": cmds.getAttr(f"{regression_node}.bias"),
+                "input_connections": cmds.listConnections(f"{regression_node}.features", source=True, destination=False, plugs=True) or [],
+                "output_connections": cmds.listConnections(f"{regression_node}.prediction", source=False, destination=True, plugs=True) or [],
+                "matrix_to_floats": matrix_to_floats_data,
+                "floats_to_transforms": floats_to_transforms_data
+            }
+    with open(file_path, "w") as f:
+        json.dump(node_data, f, indent=4)
+    
+def import_regression_node(file_path):
+    """
+    Import trained regression node data from a JSON file and recreate the node with connections.
+    """
+    load_node('regression_node')
+    load_node('matrix_to_floats')
+    load_node('floats_to_transform')
+    with open(file_path, "r") as f:
+        node_data = json.load(f)
+    # create auxilary nodes if they are needed
+    matrix_to_floats_data = node_data.get('matrix_to_floats', dict())
+    for node, connections in matrix_to_floats_data.items():
+        if not cmds.ls(node):
+            cmds.createNode("matrixToFloats", name=node)
+        for src, dest in connections:
+            cmds.connectAttr(src, dest, force=1)
+    floats_to_transforms = node_data.get('floats_to_transforms', dict())
+    for node, connections in floats_to_transforms.items():
+        if not cmds.ls(node):
+            cmds.createNode("floatsToTransform", name=node)
+        for src, dest in connections:
+            cmds.connectAttr(src, dest, force=1)
+    node = create_regression_node(node_data["node_name"], 
+                           node_data["weights"],
+                           node_data["bias"],
+                           node_data["input_connections"],
+                           node_data["output_connections"])
+    return node
+
+def create_regression_node(name, weights, bias, input_attributes, target_attributes, 
+                           input_mean=None, input_std=None):
+    node = cmds.createNode("RegressionNode", name=name)
+    for i, attr in enumerate(input_attributes):
+        cmds.connectAttr(attr, f"{node}.features[{i}]", force=True)
+    for i, weight in enumerate(weights):
+        cmds.setAttr(f"{node}.weights[{i}]", weight, type="doubleArray")
+    cmds.setAttr(f"{node}.bias", bias, type="doubleArray")
+    if input_mean:
+        cmds.setAttr(f"{node}.inputMean", input_mean, type="doubleArray")
+    if input_std:    
+        cmds.setAttr(f"{node}.inputStd", input_std, type="doubleArray")
+    for i, attr in enumerate(target_attributes):
+        cmds.connectAttr(f"{node}.prediction[{i}]", attr, force=True)
+    return node
+
+def create_matrix_to_floats_node(node):
+    
+    """
+    Create a MatrixToFloats node and connect it to the given node.
+
+    Parameters:
+    node (str): The name of the node to connect the MatrixToFloats node to.
+
+    Returns:
+    str: The name of the created MatrixToFloats node.
+    """
+    matrix_to_floats_node = cmds.createNode("matrixToFloats", name=f"{node}_matrix_to_floats")
+    cmds.connectAttr(f"{node}.matrix", f"{matrix_to_floats_node}.inputMatrix")
+    return matrix_to_floats_node
+
+def create_floats_to_transform_node(node):
+    """
+    Create a FloatsToTransform node and connect it to the given node.
+
+    Parameters:
+    node (str): The name of the node to connect the FloatsToTransform node to.
+
+    Returns:
+    str: The name of the created FloatsToTransform node.
+    """
+    floats_to_transform_node = cmds.createNode("floatsToTransform", name=f"{node}_floats_to_transform")
+    cmds.connectAttr(f"{node}.outputFloats", f"{floats_to_transform_node}.inputFloats")
+    return floats_to_transform_node

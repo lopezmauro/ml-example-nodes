@@ -1,10 +1,10 @@
-import imp
+import importlib
 import maya.cmds as cmds
 from PySide2 import QtWidgets, QtGui, QtCore
 import numpy as np
 from sklearn.decomposition import PCA
 from ui import maya_utils
-imp.reload(maya_utils)
+importlib.reload(maya_utils)
 
 class PCAUI(QtWidgets.QDialog):
     def __init__(self, parent=maya_utils.maya_main_window()):
